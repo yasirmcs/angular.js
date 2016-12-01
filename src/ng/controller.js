@@ -3,7 +3,7 @@
 var $controllerMinErr = minErr('$controller');
 
 
-var CNTRL_REG = /^(\S+)(\s+as\s+(\w+))?$/;
+var CNTRL_REG = /^(\S+)(\s+as\s+([\w$]+))?$/;
 function identifierForController(controller, ident) {
   if (ident && isString(ident)) return ident;
   if (isString(controller)) {
@@ -16,6 +16,8 @@ function identifierForController(controller, ident) {
 /**
  * @ngdoc provider
  * @name $controllerProvider
+ * @this
+ *
  * @description
  * The {@link ng.$controller $controller service} is used by Angular to create new
  * controllers.
@@ -26,6 +28,15 @@ function identifierForController(controller, ident) {
 function $ControllerProvider() {
   var controllers = {},
       globals = false;
+
+  /**
+   * @ngdoc method
+   * @name $controllerProvider#has
+   * @param {string} name Controller name to check.
+   */
+  this.has = function(name) {
+    return controllers.hasOwnProperty(name);
+  };
 
   /**
    * @ngdoc method
@@ -48,6 +59,11 @@ function $ControllerProvider() {
    * @ngdoc method
    * @name $controllerProvider#allowGlobals
    * @description If called, allows `$controller` to find controller constructors on `window`
+   *
+   * @deprecated
+   * sinceVersion="v1.3.0"
+   * removeVersion="v1.7.0"
+   * This method of finding controllers has been deprecated.
    */
   this.allowGlobals = function() {
     globals = true;
@@ -68,7 +84,7 @@ function $ControllerProvider() {
      *    * check if a controller with given name is registered via `$controllerProvider`
      *    * check if evaluating the string on the current scope returns a constructor
      *    * if $controllerProvider#allowGlobals, check `window[constructor]` on the global
-     *      `window` object (not recommended)
+     *      `window` object (deprecated, not recommended)
      *
      *    The string can use the `controller as property` syntax, where the controller instance is published
      *    as the specified property on the `scope`; the `scope` must be injected into `locals` param for this
@@ -83,7 +99,7 @@ function $ControllerProvider() {
      * It's just a simple call to {@link auto.$injector $injector}, but extracted into
      * a service, so that one can override this service with [BC version](https://gist.github.com/1649788).
      */
-    return function(expression, locals, later, ident) {
+    return function $controller(expression, locals, later, ident) {
       // PRIVATE API:
       //   param `later` --- indicates that the controller's constructor is invoked at a later time.
       //                     If true, $controller will allocate the object with the correct
@@ -101,15 +117,20 @@ function $ControllerProvider() {
         match = expression.match(CNTRL_REG);
         if (!match) {
           throw $controllerMinErr('ctrlfmt',
-            "Badly formed controller string '{0}'. " +
-            "Must match `__name__ as __id__` or `__name__`.", expression);
+            'Badly formed controller string \'{0}\'. ' +
+            'Must match `__name__ as __id__` or `__name__`.', expression);
         }
-        constructor = match[1],
+        constructor = match[1];
         identifier = identifier || match[3];
         expression = controllers.hasOwnProperty(constructor)
             ? controllers[constructor]
             : getter(locals.$scope, constructor, true) ||
                 (globals ? getter($window, constructor, true) : undefined);
+
+        if (!expression) {
+          throw $controllerMinErr('ctrlreg',
+            'The controller with the name \'{0}\' is not registered.', constructor);
+        }
 
         assertArgFn(expression, constructor, true);
       }
@@ -133,8 +154,7 @@ function $ControllerProvider() {
           addIdentifier(locals, identifier, instance, constructor || expression.name);
         }
 
-        var instantiate;
-        return instantiate = extend(function() {
+        return extend(function $controllerInit() {
           var result = $injector.invoke(expression, instance, locals, constructor);
           if (result !== instance && (isObject(result) || isFunction(result))) {
             instance = result;
@@ -162,7 +182,7 @@ function $ControllerProvider() {
     function addIdentifier(locals, identifier, instance, name) {
       if (!(locals && isObject(locals.$scope))) {
         throw minErr('$controller')('noscp',
-          "Cannot export controller '{0}' as '{1}'! No $scope object provided via `locals`.",
+          'Cannot export controller \'{0}\' as \'{1}\'! No $scope object provided via `locals`.',
           name, identifier);
       }
 

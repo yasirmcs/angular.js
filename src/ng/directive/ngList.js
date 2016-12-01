@@ -66,7 +66,7 @@
  *   </file>
  * </example>
  *
- * ### Example - splitting on whitespace
+ * ### Example - splitting on newline
  * <example name="ngList-directive-newlines">
  *   <file name="index.html">
  *    <textarea ng-model="list" ng-list="&#10;" ng-trim="false"></textarea>
@@ -91,9 +91,7 @@ var ngListDirective = function() {
     priority: 100,
     require: 'ngModel',
     link: function(scope, element, attr, ctrl) {
-      // We want to control whitespace trimming so we use this convoluted approach
-      // to access the ngList attribute, which doesn't pre-trim the attribute
-      var ngList = element.attr(attr.$attr.ngList) || ', ';
+      var ngList = attr.ngList || ', ';
       var trimValues = attr.ngTrim !== 'false';
       var separator = trimValues ? trim(ngList) : ngList;
 

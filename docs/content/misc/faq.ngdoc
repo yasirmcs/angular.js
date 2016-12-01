@@ -2,7 +2,7 @@
 @name FAQ
 @description
 
-#FAQ
+# FAQ
 
 ## Questions
 
@@ -76,6 +76,8 @@ for server-side communication.
 AngularJS was designed to be compatible with other security measures like Content Security Policy
 (CSP), HTTPS (SSL/TLS) and server-side authentication and authorization that greatly reduce the
 possible attack vectors and we highly recommend their use.
+
+Please read {@link security} for more detailed information about securing Angular apps.
 
 
 ### Can I download the source, build, and host the AngularJS environment locally?
@@ -247,7 +249,7 @@ If you want to apply a directive to each inner piece of the repeat, put it on a 
 
 ### `$rootScope` exists, but it can be used for evil
 
-Scopes in Angular form a hierarchy, prototypally inheriting from a root scope at the top of the tree.
+Scopes in Angular form a hierarchy, prototypically inheriting from a root scope at the top of the tree.
 Usually this can be ignored, since most views have a controller, and therefore a scope, of their own.
 
 Occasionally there are pieces of data that you want to make global to the whole app.

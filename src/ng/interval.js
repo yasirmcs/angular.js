@@ -1,9 +1,9 @@
 'use strict';
 
-
+/** @this */
 function $IntervalProvider() {
-  this.$get = ['$rootScope', '$window', '$q', '$$q',
-       function($rootScope,   $window,   $q,   $$q) {
+  this.$get = ['$rootScope', '$window', '$q', '$$q', '$browser',
+       function($rootScope,   $window,   $q,   $$q,   $browser) {
     var intervals = {};
 
 
@@ -43,7 +43,7 @@ function $IntervalProvider() {
       * @returns {promise} A promise which will be notified on each iteration.
       *
       * @example
-      * <example module="intervalExample">
+      * <example module="intervalExample" name="interval-service">
       * <file name="index.html">
       *   <script>
       *     angular.module('intervalExample', [])
@@ -144,11 +144,12 @@ function $IntervalProvider() {
 
       count = isDefined(count) ? count : 0;
 
-      promise.then(null, null, (!hasParams) ? fn : function() {
-        fn.apply(null, args);
-      });
-
       promise.$$intervalId = setInterval(function tick() {
+        if (skipApply) {
+          $browser.defer(callback);
+        } else {
+          $rootScope.$evalAsync(callback);
+        }
         deferred.notify(iteration++);
 
         if (count > 0 && iteration >= count) {
@@ -164,6 +165,14 @@ function $IntervalProvider() {
       intervals[promise.$$intervalId] = deferred;
 
       return promise;
+
+      function callback() {
+        if (!hasParams) {
+          fn(iteration);
+        } else {
+          fn.apply(null, args);
+        }
+      }
     }
 
 
@@ -179,6 +188,8 @@ function $IntervalProvider() {
       */
     interval.cancel = function(promise) {
       if (promise && promise.$$intervalId in intervals) {
+        // Interval cancels should not report as unhandled promise.
+        intervals[promise.$$intervalId].promise.catch(noop);
         intervals[promise.$$intervalId].reject('canceled');
         $window.clearInterval(promise.$$intervalId);
         delete intervals[promise.$$intervalId];

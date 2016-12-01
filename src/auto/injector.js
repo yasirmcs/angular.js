@@ -57,22 +57,37 @@
 /**
  * @ngdoc module
  * @name auto
+ * @installation
  * @description
  *
  * Implicit module which gets automatically added to each {@link auto.$injector $injector}.
  */
 
-var FN_ARGS = /^[^\(]*\(\s*([^\)]*)\)/m;
+var ARROW_ARG = /^([^(]+?)=>/;
+var FN_ARGS = /^[^(]*\(\s*([^)]*)\)/m;
 var FN_ARG_SPLIT = /,/;
 var FN_ARG = /^\s*(_?)(\S+?)\1\s*$/;
 var STRIP_COMMENTS = /((\/\/.*$)|(\/\*[\s\S]*?\*\/))/mg;
 var $injectorMinErr = minErr('$injector');
 
+function stringifyFn(fn) {
+  // Support: Chrome 50-51 only
+  // Creating a new string by adding `' '` at the end, to hack around some bug in Chrome v50/51
+  // (See https://github.com/angular/angular.js/issues/14487.)
+  // TODO (gkalpak): Remove workaround when Chrome v52 is released
+  return Function.prototype.toString.call(fn) + ' ';
+}
+
+function extractArgs(fn) {
+  var fnText = stringifyFn(fn).replace(STRIP_COMMENTS, ''),
+      args = fnText.match(ARROW_ARG) || fnText.match(FN_ARGS);
+  return args;
+}
+
 function anonFn(fn) {
   // For anonymous functions, showing at the very least the function signature can help in
   // debugging.
-  var fnText = fn.toString().replace(STRIP_COMMENTS, ''),
-      args = fnText.match(FN_ARGS);
+  var args = extractArgs(fn);
   if (args) {
     return 'function(' + (args[1] || '').replace(/[\s\r\n]+/, ' ') + ')';
   }
@@ -81,7 +96,6 @@ function anonFn(fn) {
 
 function annotate(fn, strictDi, name) {
   var $inject,
-      fnText,
       argDecl,
       last;
 
@@ -96,8 +110,7 @@ function annotate(fn, strictDi, name) {
           throw $injectorMinErr('strictdi',
             '{0} is not using explicit annotation and cannot be invoked in strict mode', name);
         }
-        fnText = fn.toString().replace(STRIP_COMMENTS, '');
-        argDecl = fnText.match(FN_ARGS);
+        argDecl = extractArgs(fn);
         forEach(argDecl[1].split(FN_ARG_SPLIT), function(arg) {
           arg.replace(FN_ARG, function(all, underscore, name) {
             $inject.push(name);
@@ -309,7 +322,6 @@ function annotate(fn, strictDi, name) {
 
 
 
-
 /**
  * @ngdoc service
  * @name $provide
@@ -334,18 +346,20 @@ function annotate(fn, strictDi, name) {
  * these cases the {@link auto.$provide $provide} service has additional helper methods to register
  * services without specifying a provider.
  *
- * * {@link auto.$provide#provider provider(provider)} - registers a **service provider** with the
+ * * {@link auto.$provide#provider provider(name, provider)} - registers a **service provider** with the
  *     {@link auto.$injector $injector}
- * * {@link auto.$provide#constant constant(obj)} - registers a value/object that can be accessed by
+ * * {@link auto.$provide#constant constant(name, obj)} - registers a value/object that can be accessed by
  *     providers and services.
- * * {@link auto.$provide#value value(obj)} - registers a value/object that can only be accessed by
+ * * {@link auto.$provide#value value(name, obj)} - registers a value/object that can only be accessed by
  *     services, not providers.
- * * {@link auto.$provide#factory factory(fn)} - registers a service **factory function**, `fn`,
+ * * {@link auto.$provide#factory factory(name, fn)} - registers a service **factory function**
  *     that will be wrapped in a **service provider** object, whose `$get` property will contain the
  *     given factory function.
- * * {@link auto.$provide#service service(class)} - registers a **constructor function**, `class`
+ * * {@link auto.$provide#service service(name, Fn)} - registers a **constructor function**
  *     that will be wrapped in a **service provider** object, whose `$get` property will instantiate
  *      a new object using the given constructor function.
+ * * {@link auto.$provide#decorator decorator(name, decorFn)} - registers a **decorator function** that
+ *      will be able to modify or replace the implementation of another service.
  *
  * See the individual methods for more information and examples.
  */
@@ -487,8 +501,20 @@ function annotate(fn, strictDi, name) {
  *
  * Register a **service constructor**, which will be invoked with `new` to create the service
  * instance.
- * This is short for registering a service where its provider's `$get` property is the service
- * constructor function that will be used to instantiate the service instance.
+ * This is short for registering a service where its provider's `$get` property is a factory
+ * function that returns an instance instantiated by the injector from the service constructor
+ * function.
+ *
+ * Internally it looks a bit like this:
+ *
+ * ```
+ * {
+ *   $get: function() {
+ *     return $injector.instantiate(constructor);
+ *   }
+ * }
+ * ```
+ *
  *
  * You should use {@link auto.$provide#service $provide.service(class)} if you define your service
  * as a type/class.
@@ -528,14 +554,13 @@ function annotate(fn, strictDi, name) {
  * @description
  *
  * Register a **value service** with the {@link auto.$injector $injector}, such as a string, a
- * number, an array, an object or a function.  This is short for registering a service where its
+ * number, an array, an object or a function. This is short for registering a service where its
  * provider's `$get` property is a factory function that takes no arguments and returns the **value
- * service**.
+ * service**. That also means it is not possible to inject other services into a value service.
  *
  * Value services are similar to constant services, except that they cannot be injected into a
  * module configuration function (see {@link angular.Module#config}) but they can be overridden by
- * an Angular
- * {@link auto.$provide#decorator decorator}.
+ * an Angular {@link auto.$provide#decorator decorator}.
  *
  * @param {string} name The name of the instance.
  * @param {*} value The value.
@@ -560,8 +585,11 @@ function annotate(fn, strictDi, name) {
  * @name $provide#constant
  * @description
  *
- * Register a **constant service**, such as a string, a number, an array, an object or a function,
- * with the {@link auto.$injector $injector}. Unlike {@link auto.$provide#value value} it can be
+ * Register a **constant service** with the {@link auto.$injector $injector}, such as a string,
+ * a number, an array, an object or a function. Like the {@link auto.$provide#value value}, it is not
+ * possible to inject other services into a constant.
+ *
+ * But unlike {@link auto.$provide#value value}, a constant can be
  * injected into a module configuration function (see {@link angular.Module#config}) and it cannot
  * be overridden by an Angular {@link auto.$provide#decorator decorator}.
  *
@@ -588,18 +616,20 @@ function annotate(fn, strictDi, name) {
  * @name $provide#decorator
  * @description
  *
- * Register a **service decorator** with the {@link auto.$injector $injector}. A service decorator
- * intercepts the creation of a service, allowing it to override or modify the behaviour of the
- * service. The object returned by the decorator may be the original service, or a new service
- * object which replaces or wraps and delegates to the original service.
+ * Register a **decorator function** with the {@link auto.$injector $injector}. A decorator function
+ * intercepts the creation of a service, allowing it to override or modify the behavior of the
+ * service. The return value of the decorator function may be the original service, or a new service
+ * that replaces (or wraps and delegates to) the original service.
+ *
+ * You can find out more about using decorators in the {@link guide/decorators} guide.
  *
  * @param {string} name The name of the service to decorate.
  * @param {Function|Array.<string|Function>} decorator This function will be invoked when the service needs to be
- *    instantiated and should return the decorated service instance. The function is called using
+ *    provided and should return the decorated service instance. The function is called using
  *    the {@link auto.$injector#invoke injector.invoke} method and is therefore fully injectable.
  *    Local injection arguments:
  *
- *    * `$delegate` - The original service instance, which can be monkey patched, configured,
+ *    * `$delegate` - The original service instance, which can be replaced, monkey patched, configured,
  *      decorated or delegated to.
  *
  * @example
@@ -635,17 +665,22 @@ function createInjector(modulesToLoad, strictDi) {
             if (angular.isString(caller)) {
               path.push(caller);
             }
-            throw $injectorMinErr('unpr', "Unknown provider: {0}", path.join(' <- '));
+            throw $injectorMinErr('unpr', 'Unknown provider: {0}', path.join(' <- '));
           })),
       instanceCache = {},
-      instanceInjector = (instanceCache.$injector =
+      protoInstanceInjector =
           createInternalInjector(instanceCache, function(serviceName, caller) {
             var provider = providerInjector.get(serviceName + providerSuffix, caller);
-            return instanceInjector.invoke(provider.$get, provider, undefined, serviceName);
-          }));
+            return instanceInjector.invoke(
+                provider.$get, provider, undefined, serviceName);
+          }),
+      instanceInjector = protoInstanceInjector;
 
-
-  forEach(loadModules(modulesToLoad), function(fn) { if (fn) instanceInjector.invoke(fn); });
+  providerCache['$injector' + providerSuffix] = { $get: valueFn(protoInstanceInjector) };
+  var runBlocks = loadModules(modulesToLoad);
+  instanceInjector = protoInstanceInjector.get('$injector');
+  instanceInjector.strictDi = strictDi;
+  forEach(runBlocks, function(fn) { if (fn) instanceInjector.invoke(fn); });
 
   return instanceInjector;
 
@@ -669,16 +704,16 @@ function createInjector(modulesToLoad, strictDi) {
       provider_ = providerInjector.instantiate(provider_);
     }
     if (!provider_.$get) {
-      throw $injectorMinErr('pget', "Provider '{0}' must define $get factory method.", name);
+      throw $injectorMinErr('pget', 'Provider \'{0}\' must define $get factory method.', name);
     }
-    return providerCache[name + providerSuffix] = provider_;
+    return (providerCache[name + providerSuffix] = provider_);
   }
 
   function enforceReturnValue(name, factory) {
-    return function enforcedReturnValue() {
+    return /** @this */ function enforcedReturnValue() {
       var result = instanceInjector.invoke(factory, this);
       if (isUndefined(result)) {
-        throw $injectorMinErr('undef', "Provider '{0}' must return a value from $get factory method.", name);
+        throw $injectorMinErr('undef', 'Provider \'{0}\' must return a value from $get factory method.', name);
       }
       return result;
     };
@@ -751,15 +786,15 @@ function createInjector(modulesToLoad, strictDi) {
         if (isArray(module)) {
           module = module[module.length - 1];
         }
-        if (e.message && e.stack && e.stack.indexOf(e.message) == -1) {
+        if (e.message && e.stack && e.stack.indexOf(e.message) === -1) {
           // Safari & FF's stack traces don't contain error.message content
           // unlike those of Chrome and IE
           // So if stack doesn't contain message, we create a new string that contains both.
           // Since error.stack is read-only in Safari, I'm overriding e and not e.stack here.
-          /* jshint -W022 */
+          // eslint-disable-next-line no-ex-assign
           e = e.message + '\n' + e.stack;
         }
-        throw $injectorMinErr('modulerr', "Failed to instantiate module {0} due to:\n{1}",
+        throw $injectorMinErr('modulerr', 'Failed to instantiate module {0} due to:\n{1}',
                   module, e.stack || e.message || e);
       }
     });
@@ -783,7 +818,8 @@ function createInjector(modulesToLoad, strictDi) {
         try {
           path.unshift(serviceName);
           cache[serviceName] = INSTANTIATING;
-          return cache[serviceName] = factory(serviceName, caller);
+          cache[serviceName] = factory(serviceName, caller);
+          return cache[serviceName];
         } catch (err) {
           if (cache[serviceName] === INSTANTIATING) {
             delete cache[serviceName];
@@ -795,47 +831,70 @@ function createInjector(modulesToLoad, strictDi) {
       }
     }
 
+
+    function injectionArgs(fn, locals, serviceName) {
+      var args = [],
+          $inject = createInjector.$$annotate(fn, strictDi, serviceName);
+
+      for (var i = 0, length = $inject.length; i < length; i++) {
+        var key = $inject[i];
+        if (typeof key !== 'string') {
+          throw $injectorMinErr('itkn',
+                  'Incorrect injection token! Expected service name as string, got {0}', key);
+        }
+        args.push(locals && locals.hasOwnProperty(key) ? locals[key] :
+                                                         getService(key, serviceName));
+      }
+      return args;
+    }
+
+    function isClass(func) {
+      // Support: IE 9-11 only
+      // IE 9-11 do not support classes and IE9 leaks with the code below.
+      if (msie || typeof func !== 'function') {
+        return false;
+      }
+      var result = func.$$ngIsClass;
+      if (!isBoolean(result)) {
+        // Support: Edge 12-13 only
+        // See: https://developer.microsoft.com/en-us/microsoft-edge/platform/issues/6156135/
+        result = func.$$ngIsClass = /^(?:class\b|constructor\()/.test(stringifyFn(func));
+      }
+      return result;
+    }
+
     function invoke(fn, self, locals, serviceName) {
       if (typeof locals === 'string') {
         serviceName = locals;
         locals = null;
       }
 
-      var args = [],
-          $inject = createInjector.$$annotate(fn, strictDi, serviceName),
-          length, i,
-          key;
-
-      for (i = 0, length = $inject.length; i < length; i++) {
-        key = $inject[i];
-        if (typeof key !== 'string') {
-          throw $injectorMinErr('itkn',
-                  'Incorrect injection token! Expected service name as string, got {0}', key);
-        }
-        args.push(
-          locals && locals.hasOwnProperty(key)
-          ? locals[key]
-          : getService(key, serviceName)
-        );
-      }
+      var args = injectionArgs(fn, locals, serviceName);
       if (isArray(fn)) {
-        fn = fn[length];
+        fn = fn[fn.length - 1];
       }
 
-      // http://jsperf.com/angularjs-invoke-apply-vs-switch
-      // #5388
-      return fn.apply(self, args);
+      if (!isClass(fn)) {
+        // http://jsperf.com/angularjs-invoke-apply-vs-switch
+        // #5388
+        return fn.apply(self, args);
+      } else {
+        args.unshift(null);
+        return new (Function.prototype.bind.apply(fn, args))();
+      }
     }
+
 
     function instantiate(Type, locals, serviceName) {
       // Check if Type is annotated and use just the given function at n-1 as parameter
       // e.g. someModule.factory('greeter', ['$window', function(renamed$window) {}]);
-      // Object creation: http://jsperf.com/create-constructor/2
-      var instance = Object.create((isArray(Type) ? Type[Type.length - 1] : Type).prototype || null);
-      var returnedValue = invoke(Type, instance, locals, serviceName);
-
-      return isObject(returnedValue) || isFunction(returnedValue) ? returnedValue : instance;
+      var ctor = (isArray(Type) ? Type[Type.length - 1] : Type);
+      var args = injectionArgs(Type, locals, serviceName);
+      // Empty object at position 0 is ignored for invocation with `new`, but required.
+      args.unshift(null);
+      return new (Function.prototype.bind.apply(ctor, args))();
     }
+
 
     return {
       invoke: invoke,

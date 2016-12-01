@@ -25,7 +25,7 @@ describe('Filter: filter', function() {
     expect(filter(items, '34').length).toBe(1);
     expect(filter(items, '34')[0]).toBe(1234);
 
-    expect(filter(items, "I don't exist").length).toBe(0);
+    expect(filter(items, 'I don\'t exist').length).toBe(0);
   });
 
 
@@ -192,6 +192,25 @@ describe('Filter: filter', function() {
   });
 
 
+  it('should allow specifying the special "match-all" property', function() {
+    var items = [
+      {foo: 'baz'},
+      {bar: 'baz'},
+      {'%': 'no dollar'}
+    ];
+
+    expect(filter(items, {$: 'baz'}).length).toBe(2);
+    expect(filter(items, {$: 'baz'}, null, '%').length).toBe(0);
+
+    expect(filter(items, {'%': 'dollar'}).length).toBe(1);
+    expect(filter(items, {$: 'dollar'}).length).toBe(1);
+    expect(filter(items, {$: 'dollar'}, null, '%').length).toBe(0);
+
+    expect(filter(items, {'%': 'baz'}).length).toBe(0);
+    expect(filter(items, {'%': 'baz'}, null, '%').length).toBe(2);
+  });
+
+
   it('should match any properties in the nested object for given deep "$" property', function() {
     var items = [{person: {name: 'Annet', email: 'annet@example.com'}},
                  {person: {name: 'Billy', email: 'me@billy.com'}},
@@ -315,7 +334,7 @@ describe('Filter: filter', function() {
     expect(filter(items, expr, true).length).toBe(1);
     expect(filter(items, expr, true)[0]).toBe(items[0]);
 
-    // Inherited function proprties
+    // Inherited function properties
     function Expr(text) {
         this.text = text;
     }
@@ -381,6 +400,7 @@ describe('Filter: filter', function() {
 
 
   it('should not be affected by `Object.prototype` when using a string expression', function() {
+    // eslint-disable-next-line no-extend-native
     Object.prototype.someProp = 'oo';
 
     var items = [
@@ -425,21 +445,21 @@ describe('Filter: filter', function() {
       toThrowMinErr('filter', 'notarray', 'Expected array but received: {"toString":null,"valueOf":null}');
   });
 
+
   it('should not throw an error if used with an array like object', function() {
     function getArguments() {
       return arguments;
     }
     var argsObj = getArguments({name: 'Misko'}, {name: 'Igor'}, {name: 'Brad'});
 
-    var nodeList = jqLite("<p><span>Misko</span><span>Igor</span><span>Brad</span></p>")[0].childNodes;
+    var nodeList = jqLite('<p><span>Misko</span><span>Igor</span><span>Brad</span></p>')[0].childNodes;
     function nodeFilterPredicate(node) {
-      return node.innerHTML.indexOf("I") !== -1;
+      return node.innerHTML.indexOf('I') !== -1;
     }
 
     expect(filter(argsObj, 'i').length).toBe(2);
     expect(filter('abc','b').length).toBe(1);
     expect(filter(nodeList, nodeFilterPredicate).length).toBe(1);
-
   });
 
 
@@ -541,7 +561,7 @@ describe('Filter: filter', function() {
 
 
     it('should consider objects with custom `toString()` in non-strict comparison', function() {
-      var obj = new Date(1970, 0);
+      var obj = new Date(1970, 1);
       var items = [{test: obj}];
       expect(filter(items, '1970').length).toBe(1);
       expect(filter(items, 1970).length).toBe(1);

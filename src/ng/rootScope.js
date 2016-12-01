@@ -14,15 +14,15 @@
  *     exposed as $$____ properties
  *
  * Loop operations are optimized by using while(count--) { ... }
- *   - this means that in order to keep the same order of execution as addition we have to add
+ *   - This means that in order to keep the same order of execution as addition we have to add
  *     items to the array at the beginning (unshift) instead of at the end (push)
  *
  * Child scopes are created and removed often
- *   - Using an array would be slow since inserts in middle are expensive so we use linked list
+ *   - Using an array would be slow since inserts in the middle are expensive; so we use linked lists
  *
- * There are few watches then a lot of observers. This is why you don't want the observer to be
- * implemented in the same way as watch. Watch requires return of initialization function which
- * are expensive to construct.
+ * There are fewer watches than observers. This is why you don't want the observer to be implemented
+ * in the same way as watch. Watch requires return of the initialization function which is expensive
+ * to construct.
  */
 
 
@@ -59,12 +59,14 @@
 /**
  * @ngdoc service
  * @name $rootScope
+ * @this
+ *
  * @description
  *
  * Every application has a single root {@link ng.$rootScope.Scope scope}.
  * All other scopes are descendant scopes of the root scope. Scopes provide separation
  * between the model and the view, via a mechanism for watching the model for changes.
- * They also provide an event emission/broadcast and subscription facility. See the
+ * They also provide event emission/broadcast and subscription facility. See the
  * {@link guide/scope developer guide on scopes}.
  */
 function $RootScopeProvider() {
@@ -94,11 +96,39 @@ function $RootScopeProvider() {
     return ChildScope;
   }
 
-  this.$get = ['$injector', '$exceptionHandler', '$parse', '$browser',
-      function($injector, $exceptionHandler, $parse, $browser) {
+  this.$get = ['$exceptionHandler', '$parse', '$browser',
+      function($exceptionHandler, $parse, $browser) {
 
     function destroyChildScope($event) {
         $event.currentScope.$$destroyed = true;
+    }
+
+    function cleanUpScope($scope) {
+
+      // Support: IE 9 only
+      if (msie === 9) {
+        // There is a memory leak in IE9 if all child scopes are not disconnected
+        // completely when a scope is destroyed. So this code will recurse up through
+        // all this scopes children
+        //
+        // See issue https://github.com/angular/angular.js/issues/10706
+        if ($scope.$$childHead) {
+          cleanUpScope($scope.$$childHead);
+        }
+        if ($scope.$$nextSibling) {
+          cleanUpScope($scope.$$nextSibling);
+        }
+      }
+
+      // The code below works around IE9 and V8's memory leaks
+      //
+      // See:
+      // - https://code.google.com/p/v8/issues/detail?id=2073#c26
+      // - https://github.com/angular/angular.js/issues/6794#issuecomment-38648909
+      // - https://github.com/angular/angular.js/issues/1313#issuecomment-10378451
+
+      $scope.$parent = $scope.$$nextSibling = $scope.$$prevSibling = $scope.$$childHead =
+          $scope.$$childTail = $scope.$root = $scope.$$watchers = null;
     }
 
     /**
@@ -239,7 +269,7 @@ function $RootScopeProvider() {
         // prototypically. In all other cases, this property needs to be set
         // when the parent scope is destroyed.
         // The listener needs to be added after the parent is set
-        if (isolate || parent != this) child.$on('$destroy', destroyChildScope);
+        if (isolate || parent !== this) child.$on('$destroy', destroyChildScope);
 
         return child;
       },
@@ -256,7 +286,7 @@ function $RootScopeProvider() {
        *   $digest()} and should return the value that will be watched. (`watchExpression` should not change
        *   its value when executed multiple times with the same input because it may be executed multiple
        *   times by {@link ng.$rootScope.Scope#$digest $digest()}. That is, `watchExpression` should be
-       *   [idempotent](http://en.wikipedia.org/wiki/Idempotence).
+       *   [idempotent](http://en.wikipedia.org/wiki/Idempotence).)
        * - The `listener` is called only when the value from the current `watchExpression` and the
        *   previous call to `watchExpression` are not equal (with the exception of the initial run,
        *   see below). Inequality is determined according to reference inequality,
@@ -267,6 +297,8 @@ function $RootScopeProvider() {
        *   according to the {@link angular.equals} function. To save the value of the object for
        *   later comparison, the {@link angular.copy} function is used. This therefore means that
        *   watching complex objects will have adverse memory and performance implications.
+       * - This should not be used to watch for changes in objects that are
+       *   or contain [File](https://developer.mozilla.org/docs/Web/API/File) objects due to limitations with {@link angular.copy `angular.copy`}.
        * - The watch `listener` may change the model, which may trigger other `listener`s to fire.
        *   This is achieved by rerunning the watchers until no changes are detected. The rerun
        *   iteration limit is 10 to prevent an infinite loop deadlock.
@@ -356,7 +388,7 @@ function $RootScopeProvider() {
        *    - `newVal` contains the current value of the `watchExpression`
        *    - `oldVal` contains the previous value of the `watchExpression`
        *    - `scope` refers to the current scope
-       * @param {boolean=} objectEquality Compare for object equality using {@link angular.equals} instead of
+       * @param {boolean=} [objectEquality=false] Compare for object equality using {@link angular.equals} instead of
        *     comparing for reference equality.
        * @returns {function()} Returns a deregistration function for this listener.
        */
@@ -407,8 +439,8 @@ function $RootScopeProvider() {
        * A variant of {@link ng.$rootScope.Scope#$watch $watch()} where it watches an array of `watchExpressions`.
        * If any one expression in the collection changes the `listener` is executed.
        *
-       * - The items in the `watchExpressions` array are observed via standard $watch operation and are examined on every
-       *   call to $digest() to see if any items changes.
+       * - The items in the `watchExpressions` array are observed via the standard `$watch` operation. Their return
+       *   values are examined for changes on every call to `$digest`.
        * - The `listener` is called whenever any expression in the `watchExpressions` array changes.
        *
        * @param {Array.<string|Function(scope)>} watchExpressions Array of expressions that will be individually
@@ -589,6 +621,7 @@ function $RootScopeProvider() {
               oldItem = oldValue[i];
               newItem = newValue[i];
 
+              // eslint-disable-next-line no-self-compare
               bothNaN = (oldItem !== oldItem) && (newItem !== newItem);
               if (!bothNaN && (oldItem !== newItem)) {
                 changeDetected++;
@@ -611,6 +644,7 @@ function $RootScopeProvider() {
                 oldItem = oldValue[key];
 
                 if (key in oldValue) {
+                  // eslint-disable-next-line no-self-compare
                   bothNaN = (oldItem !== oldItem) && (newItem !== newItem);
                   if (!bothNaN && (oldItem !== newItem)) {
                     changeDetected++;
@@ -721,13 +755,13 @@ function $RootScopeProvider() {
        *
        */
       $digest: function() {
-        var watch, value, last,
+        var watch, value, last, fn, get,
             watchers,
             length,
             dirty, ttl = TTL,
             next, current, target = this,
             watchLog = [],
-            logIdx, logMsg, asyncTask;
+            logIdx, asyncTask;
 
         beginPhase('$digest');
         // Check for changes to browser url that happened in sync before the call to $digest
@@ -746,15 +780,19 @@ function $RootScopeProvider() {
           dirty = false;
           current = target;
 
-          while (asyncQueue.length) {
+          // It's safe for asyncQueuePosition to be a local variable here because this loop can't
+          // be reentered recursively. Calling $digest from a function passed to $applyAsync would
+          // lead to a '$digest already in progress' error.
+          for (var asyncQueuePosition = 0; asyncQueuePosition < asyncQueue.length; asyncQueuePosition++) {
             try {
-              asyncTask = asyncQueue.shift();
+              asyncTask = asyncQueue[asyncQueuePosition];
               asyncTask.scope.$eval(asyncTask.expression, asyncTask.locals);
             } catch (e) {
               $exceptionHandler(e);
             }
             lastDirtyWatch = null;
           }
+          asyncQueue.length = 0;
 
           traverseScopesLoop:
           do { // "traverse the scopes" loop
@@ -767,15 +805,16 @@ function $RootScopeProvider() {
                   // Most common watches are on primitives, in which case we can short
                   // circuit it with === operator, only when === fails do we use .equals
                   if (watch) {
-                    if ((value = watch.get(current)) !== (last = watch.last) &&
+                    get = watch.get;
+                    if ((value = get(current)) !== (last = watch.last) &&
                         !(watch.eq
                             ? equals(value, last)
-                            : (typeof value === 'number' && typeof last === 'number'
-                               && isNaN(value) && isNaN(last)))) {
+                            : (isNumberNaN(value) && isNumberNaN(last)))) {
                       dirty = true;
                       lastDirtyWatch = watch;
                       watch.last = watch.eq ? copy(value, null) : value;
-                      watch.fn(value, ((last === initWatchVal) ? value : last), current);
+                      fn = watch.fn;
+                      fn(value, ((last === initWatchVal) ? value : last), current);
                       if (ttl < 5) {
                         logIdx = 4 - ttl;
                         if (!watchLog[logIdx]) watchLog[logIdx] = [];
@@ -823,13 +862,15 @@ function $RootScopeProvider() {
 
         clearPhase();
 
-        while (postDigestQueue.length) {
+        // postDigestQueuePosition isn't local here because this loop can be reentered recursively.
+        while (postDigestQueuePosition < postDigestQueue.length) {
           try {
-            postDigestQueue.shift()();
+            postDigestQueue[postDigestQueuePosition++]();
           } catch (e) {
             $exceptionHandler(e);
           }
         }
+        postDigestQueue.length = postDigestQueuePosition = 0;
       },
 
 
@@ -887,8 +928,8 @@ function $RootScopeProvider() {
 
         // sever all the references to parent scopes (after this cleanup, the current scope should
         // not be retained by any of our references and should be eligible for garbage collection)
-        if (parent && parent.$$childHead == this) parent.$$childHead = this.$$nextSibling;
-        if (parent && parent.$$childTail == this) parent.$$childTail = this.$$prevSibling;
+        if (parent && parent.$$childHead === this) parent.$$childHead = this.$$nextSibling;
+        if (parent && parent.$$childTail === this) parent.$$childTail = this.$$prevSibling;
         if (this.$$prevSibling) this.$$prevSibling.$$nextSibling = this.$$nextSibling;
         if (this.$$nextSibling) this.$$nextSibling.$$prevSibling = this.$$prevSibling;
 
@@ -897,16 +938,9 @@ function $RootScopeProvider() {
         this.$on = this.$watch = this.$watchGroup = function() { return noop; };
         this.$$listeners = {};
 
-        // All of the code below is bogus code that works around V8's memory leak via optimized code
-        // and inline caches.
-        //
-        // see:
-        // - https://code.google.com/p/v8/issues/detail?id=2073#c26
-        // - https://github.com/angular/angular.js/issues/6794#issuecomment-38648909
-        // - https://github.com/angular/angular.js/issues/1313#issuecomment-10378451
-
-        this.$parent = this.$$nextSibling = this.$$prevSibling = this.$$childHead =
-            this.$$childTail = this.$root = this.$$watchers = null;
+        // Disconnect the next sibling to prevent `cleanUpScope` destroying those too
+        this.$$nextSibling = null;
+        cleanUpScope(this);
       },
 
       /**
@@ -982,7 +1016,7 @@ function $RootScopeProvider() {
           });
         }
 
-        asyncQueue.push({scope: this, expression: expr, locals: locals});
+        asyncQueue.push({scope: this, expression: $parse(expr), locals: locals});
       },
 
       $$postDigest: function(fn) {
@@ -1049,6 +1083,7 @@ function $RootScopeProvider() {
             $rootScope.$digest();
           } catch (e) {
             $exceptionHandler(e);
+            // eslint-disable-next-line no-unsafe-finally
             throw e;
           }
         }
@@ -1073,7 +1108,10 @@ function $RootScopeProvider() {
        */
       $applyAsync: function(expr) {
         var scope = this;
-        expr && applyAsyncQueue.push($applyAsyncExpression);
+        if (expr) {
+          applyAsyncQueue.push($applyAsyncExpression);
+        }
+        expr = $parse(expr);
         scheduleApplyAsync();
 
         function $applyAsyncExpression() {
@@ -1289,6 +1327,8 @@ function $RootScopeProvider() {
     var asyncQueue = $rootScope.$$asyncQueue = [];
     var postDigestQueue = $rootScope.$$postDigestQueue = [];
     var applyAsyncQueue = $rootScope.$$applyAsyncQueue = [];
+
+    var postDigestQueuePosition = 0;
 
     return $rootScope;
 

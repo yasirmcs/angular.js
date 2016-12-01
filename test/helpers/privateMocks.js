@@ -11,9 +11,8 @@ function baseThey(msg, vals, spec, itFn) {
   var valsIsArray = angular.isArray(vals);
 
   angular.forEach(vals, function(val, key) {
-    var m = msg.replace(/\$prop/g, angular.toJson(valsIsArray ? val : key));
+    var m = msg.split('$prop').join(angular.toJson(valsIsArray ? val : key));
     itFn(m, function() {
-      /* jshint -W040 : ignore possible strict violation due to use of this */
       spec.call(this, val);
     });
   });
@@ -23,8 +22,8 @@ function they(msg, vals, spec) {
   baseThey(msg, vals, spec, it);
 }
 
-function tthey(msg, vals, spec) {
-  baseThey(msg, vals, spec, iit);
+function fthey(msg, vals, spec) {
+  baseThey(msg, vals, spec, fit);
 }
 
 function xthey(msg, vals, spec) {
@@ -32,17 +31,13 @@ function xthey(msg, vals, spec) {
 }
 
 function browserSupportsCssAnimations() {
-  var nav = window.navigator.appVersion;
-  if (nav.indexOf('MSIE') >= 0) {
-    var version = parseInt(navigator.appVersion.match(/MSIE ([\d.]+)/)[1]);
-    return version >= 10; //only IE10+ support keyframes / transitions
-  }
-  return true;
+  // Support: IE < 10
+  // Only IE10+ support keyframes / transitions
+  return !(window.document.documentMode < 10);
 }
 
-function createMockStyleSheet(doc, wind) {
-  doc = doc ? doc[0] : document;
-  wind = wind || window;
+function createMockStyleSheet(doc) {
+  doc = doc ? doc[0] : window.document;
 
   var node = doc.createElement('style');
   var head = doc.getElementsByTagName('head')[0];
@@ -54,13 +49,27 @@ function createMockStyleSheet(doc, wind) {
     addRule: function(selector, styles) {
       try {
         ss.insertRule(selector + '{ ' + styles + '}', 0);
-      }
-      catch (e) {
+      } catch (e) {
         try {
           ss.addRule(selector, styles);
-        }
-        catch (e2) {}
+        } catch (e2) { /* empty */ }
       }
+    },
+
+    addPossiblyPrefixedRule: function(selector, styles) {
+      // Support: Android <5, Blackberry Browser 10, default Chrome in Android 4.4.x
+      // Mentioned browsers need a -webkit- prefix for transitions & animations.
+      var prefixedStyles = styles.split(/\s*;\s*/g)
+        .filter(function(style) {
+          return style && /^(?:transition|animation)\b/.test(style);
+        })
+        .map(function(style) {
+          return '-webkit-' + style;
+        }).join('; ');
+
+      this.addRule(selector, prefixedStyles);
+
+      this.addRule(selector, styles);
     },
 
     destroy: function() {

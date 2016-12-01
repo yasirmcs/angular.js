@@ -69,7 +69,7 @@ describe('$interval', function() {
 
   it('should call $apply after each task is executed',
       inject(function($interval, $rootScope, $window) {
-    var applySpy = spyOn($rootScope, '$apply').andCallThrough();
+    var applySpy = spyOn($rootScope, '$apply').and.callThrough();
 
     $interval(noop, 1000);
     expect(applySpy).not.toHaveBeenCalled();
@@ -77,18 +77,18 @@ describe('$interval', function() {
     $window.flush(1000);
     expect(applySpy).toHaveBeenCalledOnce();
 
-    applySpy.reset();
+    applySpy.calls.reset();
 
     $interval(noop, 1000);
     $interval(noop, 1000);
     $window.flush(1000);
-    expect(applySpy.callCount).toBe(3);
+    expect(applySpy).toHaveBeenCalledTimes(3);
   }));
 
 
   it('should NOT call $apply if invokeApply is set to false',
       inject(function($interval, $rootScope, $window) {
-    var applySpy = spyOn($rootScope, '$apply').andCallThrough();
+    var applySpy = spyOn($rootScope, '$apply').and.callThrough();
 
     $interval(noop, 1000, 0, false);
     expect(applySpy).not.toHaveBeenCalled();
@@ -100,8 +100,8 @@ describe('$interval', function() {
 
   it('should NOT call $evalAsync or $digest if invokeApply is set to false',
       inject(function($interval, $rootScope, $window, $timeout) {
-    var evalAsyncSpy = spyOn($rootScope, '$evalAsync').andCallThrough();
-    var digestSpy = spyOn($rootScope, '$digest').andCallThrough();
+    var evalAsyncSpy = spyOn($rootScope, '$evalAsync').and.callThrough();
+    var digestSpy = spyOn($rootScope, '$digest').and.callThrough();
     var notifySpy = jasmine.createSpy('notify');
 
     $interval(notifySpy, 1000, 1, false);
@@ -113,6 +113,35 @@ describe('$interval', function() {
     expect(evalAsyncSpy).not.toHaveBeenCalled();
     expect(digestSpy).not.toHaveBeenCalled();
   }));
+
+
+  it('should not depend on `notify` to trigger the callback call', function() {
+    module(function($provide) {
+      $provide.decorator('$q', function($delegate) {
+        function replacement() {}
+        replacement.defer = function() {
+          var result = $delegate.defer();
+          result.notify = noop;
+          return result;
+        };
+        return replacement;
+      });
+    });
+
+    inject(function($interval, $window) {
+      var counter = 0;
+      $interval(function() { counter++; }, 1000);
+
+      expect(counter).toBe(0);
+
+      $window.flush(1000);
+      expect(counter).toBe(1);
+
+      $window.flush(1000);
+
+      expect(counter).toBe(2);
+    });
+  });
 
 
   it('should allow you to specify the delay time', inject(function($interval, $window) {
@@ -155,9 +184,9 @@ describe('$interval', function() {
     expect(task2).toHaveBeenCalledWith('Task2');
     expect(task3).toHaveBeenCalledWith('I', 'am', 'a', 'Task3', 'spy');
 
-    task1.reset();
-    task2.reset();
-    task3.reset();
+    task1.calls.reset();
+    task2.calls.reset();
+    task3.calls.reset();
 
     $window.flush(1000);
     expect(task1).toHaveBeenCalledWith('Task1');
@@ -214,22 +243,22 @@ describe('$interval', function() {
 
     it('should delegate exception to the $exceptionHandler service', inject(
         function($interval, $exceptionHandler, $window) {
-      $interval(function() { throw "Test Error"; }, 1000);
+      $interval(function() { throw 'Test Error'; }, 1000);
       expect($exceptionHandler.errors).toEqual([]);
 
       $window.flush(1000);
-      expect($exceptionHandler.errors).toEqual(["Test Error"]);
+      expect($exceptionHandler.errors).toEqual(['Test Error']);
 
       $window.flush(1000);
-      expect($exceptionHandler.errors).toEqual(["Test Error", "Test Error"]);
+      expect($exceptionHandler.errors).toEqual(['Test Error', 'Test Error']);
     }));
 
 
     it('should call $apply even if an exception is thrown in callback', inject(
         function($interval, $rootScope, $window) {
-      var applySpy = spyOn($rootScope, '$apply').andCallThrough();
+      var applySpy = spyOn($rootScope, '$apply').and.callThrough();
 
-      $interval(function() { throw "Test Error"; }, 1000);
+      $interval(function() { throw 'Test Error'; }, 1000);
       expect(applySpy).not.toHaveBeenCalled();
 
       $window.flush(1000);
@@ -240,7 +269,7 @@ describe('$interval', function() {
     it('should still update the interval promise when an exception is thrown',
         inject(function($interval, $window) {
       var log = [],
-          promise = $interval(function() { throw "Some Error"; }, 1000);
+          promise = $interval(function() { throw 'Some Error'; }, 1000);
 
       promise.then(function(value) { log.push('promise success: ' + value); },
                  function(err) { log.push('promise error: ' + err); },
@@ -327,7 +356,7 @@ describe('$interval', function() {
       $window.flush(1000);
       expect(clearIntervalSpy).toHaveBeenCalled();
 
-      clearIntervalSpy.reset();
+      clearIntervalSpy.calls.reset();
       $interval.cancel($interval(noop, 1000));
       expect(clearIntervalSpy).toHaveBeenCalled();
     }));

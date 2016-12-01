@@ -35,10 +35,10 @@ function init {
 }
 
 function build {
+  source ./init-node.sh
   cd ../..
 
-  npm install --color false
-  grunt ci-checks package --no-color
+  grunt  ci-checks package --no-color
 
   cd $SCRIPT_DIR
 }

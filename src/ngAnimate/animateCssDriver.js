@@ -1,6 +1,6 @@
 'use strict';
 
-var $$AnimateCssDriverProvider = ['$$animationProvider', function($$animationProvider) {
+var $$AnimateCssDriverProvider = ['$$animationProvider', /** @this */ function($$animationProvider) {
   $$animationProvider.drivers.push('$$animateCssDriver');
 
   var NG_ANIMATE_SHIM_CLASS_NAME = 'ng-animate-shim';
@@ -9,18 +9,25 @@ var $$AnimateCssDriverProvider = ['$$animationProvider', function($$animationPro
   var NG_OUT_ANCHOR_CLASS_NAME = 'ng-anchor-out';
   var NG_IN_ANCHOR_CLASS_NAME = 'ng-anchor-in';
 
-  this.$get = ['$animateCss', '$rootScope', '$$AnimateRunner', '$rootElement', '$$body', '$sniffer', '$$jqLite',
-       function($animateCss,   $rootScope,   $$AnimateRunner,   $rootElement,   $$body,   $sniffer,   $$jqLite) {
+  function isDocumentFragment(node) {
+    return node.parentNode && node.parentNode.nodeType === 11;
+  }
+
+  this.$get = ['$animateCss', '$rootScope', '$$AnimateRunner', '$rootElement', '$sniffer', '$$jqLite', '$document',
+       function($animateCss,   $rootScope,   $$AnimateRunner,   $rootElement,   $sniffer,   $$jqLite,   $document) {
 
     // only browsers that support these properties can render animations
     if (!$sniffer.animations && !$sniffer.transitions) return noop;
 
-    var bodyNode = getDomNode($$body);
+    var bodyNode = $document[0].body;
     var rootNode = getDomNode($rootElement);
 
-    var rootBodyElement = jqLite(bodyNode.parentNode === rootNode ? bodyNode : rootNode);
-
-    var applyAnimationClasses = applyAnimationClassesFactory($$jqLite);
+    var rootBodyElement = jqLite(
+      // this is to avoid using something that exists outside of the body
+      // we also special case the doc fragment case because our unit test code
+      // appends the $rootElement to the body after the app has been bootstrapped
+      isDocumentFragment(rootNode) || bodyNode.contains(rootNode) ? rootNode : bodyNode
+    );
 
     return function initDriverFn(animationDetails) {
       return animationDetails.from && animationDetails.to
@@ -115,7 +122,7 @@ var $$AnimateCssDriverProvider = ['$$animationProvider', function($$animationPro
         var coords = getDomNode(anchor).getBoundingClientRect();
 
         // we iterate directly since safari messes up and doesn't return
-        // all the keys for the coods object when iterated
+        // all the keys for the coords object when iterated
         forEach(['width','height','top','left'], function(key) {
           var value = coords[key];
           switch (key) {

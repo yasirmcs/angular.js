@@ -1,6 +1,8 @@
 'use strict';
 
-var $$AnimationProvider = ['$animateProvider', function($animateProvider) {
+/* exported $$AnimationProvider */
+
+var $$AnimationProvider = ['$animateProvider', /** @this */ function($animateProvider) {
   var NG_ANIMATE_REF_ATTR = 'ng-animate-ref';
 
   var drivers = this.drivers = [];
@@ -133,6 +135,12 @@ var $$AnimationProvider = ['$animateProvider', function($animateProvider) {
       if (tempClasses) {
         classes += ' ' + tempClasses;
         options.tempClasses = null;
+      }
+
+      var prepareClassName;
+      if (isStructural) {
+        prepareClassName = 'ng-' + event + PREPARE_CLASS_SUFFIX;
+        $$jqLite.addClass(element, prepareClassName);
       }
 
       animationQueue.push({
@@ -299,7 +307,7 @@ var $$AnimationProvider = ['$animateProvider', function($animateProvider) {
             };
 
             // the anchor animations require that the from and to elements both have at least
-            // one shared CSS class which effictively marries the two elements together to use
+            // one shared CSS class which effectively marries the two elements together to use
             // the same animation driver and to properly sequence the anchor animation.
             if (group.classes.length) {
               preparedAnimations.push(group);
@@ -342,8 +350,6 @@ var $$AnimationProvider = ['$animateProvider', function($animateProvider) {
         // may attempt more elements, but custom drivers are more particular
         for (var i = drivers.length - 1; i >= 0; i--) {
           var driverName = drivers[i];
-          if (!$injector.has(driverName)) continue; // TODO(matsko): remove this check
-
           var factory = $injector.get(driverName);
           var driver = factory(animationDetails);
           if (driver) {
@@ -357,6 +363,10 @@ var $$AnimationProvider = ['$animateProvider', function($animateProvider) {
         if (tempClasses) {
           $$jqLite.addClass(element, tempClasses);
         }
+        if (prepareClassName) {
+          $$jqLite.removeClass(element, prepareClassName);
+          prepareClassName = null;
+        }
       }
 
       function updateAnimationRunners(animation, newRunner) {
@@ -368,7 +378,8 @@ var $$AnimationProvider = ['$animateProvider', function($animateProvider) {
         }
 
         function update(element) {
-          getRunner(element).setHost(newRunner);
+          var runner = getRunner(element);
+          if (runner) runner.setHost(newRunner);
         }
       }
 
@@ -379,7 +390,7 @@ var $$AnimationProvider = ['$animateProvider', function($animateProvider) {
         }
       }
 
-      function close(rejected) { // jshint ignore:line
+      function close(rejected) {
         element.off('$destroy', handleDestroyedElement);
         removeRunner(element);
 

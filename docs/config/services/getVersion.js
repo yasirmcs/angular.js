@@ -1,10 +1,10 @@
-"use strict";
+'use strict';
 var path = require('canonical-path');
 
 /**
  * dgService getVersion
  * @description
- * Find the current version of the bower component (or npm module)
+ * Find the current version of the bower component (or node module)
  */
 module.exports = function getVersion(readFilesProcessor) {
   var basePath = readFilesProcessor.basePath;

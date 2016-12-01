@@ -12,6 +12,10 @@ describe('ngMessages', function() {
     return str.replace(/\s+/g,'');
   }
 
+  function trim(value) {
+    return isString(value) ? value.trim() : value;
+  }
+
   var element;
   afterEach(function() {
     dealoc(element);
@@ -318,7 +322,7 @@ describe('ngMessages', function() {
     expect(element.hasClass('ng-inactive')).toBe(false);
   }));
 
-  it('should automatically re-render the messages when other directives dynmically change them',
+  it('should automatically re-render the messages when other directives dynamically change them',
     inject(function($rootScope, $compile) {
 
     element = $compile('<div ng-messages="col">' +
@@ -338,21 +342,21 @@ describe('ngMessages', function() {
     });
 
     expect(messageChildren(element).length).toBe(0);
-    expect(trim(element.text())).toEqual("");
+    expect(trim(element.text())).toEqual('');
 
     $rootScope.$apply(function() {
       $rootScope.col = { hair: true };
     });
 
     expect(messageChildren(element).length).toBe(1);
-    expect(trim(element.text())).toEqual("Your hair is too long");
+    expect(trim(element.text())).toEqual('Your hair is too long');
 
     $rootScope.$apply(function() {
       $rootScope.col = { age: true, hair: true};
     });
 
     expect(messageChildren(element).length).toBe(1);
-    expect(trim(element.text())).toEqual("Your age is incorrect");
+    expect(trim(element.text())).toEqual('Your age is incorrect');
 
     $rootScope.$apply(function() {
       // remove the age!
@@ -360,7 +364,7 @@ describe('ngMessages', function() {
     });
 
     expect(messageChildren(element).length).toBe(1);
-    expect(trim(element.text())).toEqual("Your hair is too long");
+    expect(trim(element.text())).toEqual('Your hair is too long');
 
     $rootScope.$apply(function() {
       // remove the hair!
@@ -369,9 +373,93 @@ describe('ngMessages', function() {
     });
 
     expect(messageChildren(element).length).toBe(1);
-    expect(trim(element.text())).toEqual("Enter something");
+    expect(trim(element.text())).toEqual('Enter something');
   }));
 
+
+  it('should be compatible with ngBind',
+    inject(function($rootScope, $compile) {
+
+    element = $compile('<div ng-messages="col">' +
+                       '        <div ng-message="required" ng-bind="errorMessages.required"></div>' +
+                       '        <div ng-message="extra" ng-bind="errorMessages.extra"></div>' +
+                       '</div>')($rootScope);
+
+    $rootScope.$apply(function() {
+      $rootScope.col = {
+        required: true,
+        extra: true
+      };
+      $rootScope.errorMessages = {
+        required: 'Fill in the text field.',
+        extra: 'Extra error message.'
+      };
+    });
+
+    expect(messageChildren(element).length).toBe(1);
+    expect(trim(element.text())).toEqual('Fill in the text field.');
+
+    $rootScope.$apply(function() {
+      $rootScope.col.required = false;
+      $rootScope.col.extra = true;
+    });
+
+    expect(messageChildren(element).length).toBe(1);
+    expect(trim(element.text())).toEqual('Extra error message.');
+
+    $rootScope.$apply(function() {
+      $rootScope.errorMessages.extra = 'New error message.';
+    });
+
+    expect(messageChildren(element).length).toBe(1);
+    expect(trim(element.text())).toEqual('New error message.');
+  }));
+
+
+  // issue #12856
+  it('should only detach the message object that is associated with the message node being removed',
+    inject(function($rootScope, $compile, $animate) {
+
+    // We are going to spy on the `leave` method to give us control over
+    // when the element is actually removed
+    spyOn($animate, 'leave');
+
+    // Create a basic ng-messages set up
+    element = $compile('<div ng-messages="col">' +
+                       '  <div ng-message="primary">Enter something</div>' +
+                       '</div>')($rootScope);
+
+    // Trigger the message to be displayed
+    $rootScope.col = { primary: true };
+    $rootScope.$digest();
+    expect(messageChildren(element).length).toEqual(1);
+    var oldMessageNode = messageChildren(element)[0];
+
+    // Remove the message
+    $rootScope.col = { primary: undefined };
+    $rootScope.$digest();
+
+    // Since we have spied on the `leave` method, the message node is still in the DOM
+    expect($animate.leave).toHaveBeenCalledOnce();
+    var nodeToRemove = $animate.leave.calls.mostRecent().args[0][0];
+    expect(nodeToRemove).toBe(oldMessageNode);
+    $animate.leave.calls.reset();
+
+    // Add the message back in
+    $rootScope.col = { primary: true };
+    $rootScope.$digest();
+
+    // Simulate the animation completing on the node
+    jqLite(nodeToRemove).remove();
+
+    // We should not get another call to `leave`
+    expect($animate.leave).not.toHaveBeenCalled();
+
+    // There should only be the new message node
+    expect(messageChildren(element).length).toEqual(1);
+    var newMessageNode = messageChildren(element)[0];
+    expect(newMessageNode).not.toBe(oldMessageNode);
+  }));
 
   it('should render animations when the active/inactive classes are added/removed', function() {
     module('ngAnimate');
@@ -401,6 +489,154 @@ describe('ngMessages', function() {
     });
   });
 
+  describe('ngMessage nested nested inside elements', function() {
+
+    it('should not crash or leak memory when the messages are transcluded, the first message is ' +
+      'visible, and ngMessages is removed by ngIf', function() {
+
+      module(function($compileProvider) {
+        $compileProvider.directive('messageWrap', function() {
+          return {
+            transclude: true,
+            scope: {
+              col: '=col'
+            },
+            template: '<div ng-messages="col"><ng-transclude></ng-transclude></div>'
+          };
+        });
+      });
+
+      inject(function($rootScope, $compile) {
+
+        element = $compile('<div><div ng-if="show"><div message-wrap col="col">' +
+                           '        <div ng-message="a">A</div>' +
+                           '        <div ng-message="b">B</div>' +
+                           '</div></div></div>')($rootScope);
+
+        $rootScope.$apply(function() {
+          $rootScope.show = true;
+          $rootScope.col = {
+            a: true,
+            b: true
+          };
+        });
+
+        expect(messageChildren(element).length).toBe(1);
+        expect(trim(element.text())).toEqual('A');
+
+        $rootScope.$apply('show = false');
+
+        expect(messageChildren(element).length).toBe(0);
+      });
+    });
+
+
+    it('should not crash when the first of two nested messages is removed', function() {
+      inject(function($rootScope, $compile) {
+
+        element = $compile(
+          '<div ng-messages="col">' +
+            '<div class="wrapper">' +
+              '<div remove-me ng-message="a">A</div>' +
+              '<div ng-message="b">B</div>' +
+            '</div>' +
+          '</div>'
+        )($rootScope);
+
+        $rootScope.$apply(function() {
+          $rootScope.col = {
+            a: true,
+            b: false
+          };
+        });
+
+        expect(messageChildren(element).length).toBe(1);
+        expect(trim(element.text())).toEqual('A');
+
+        var ctrl = element.controller('ngMessages');
+        var deregisterSpy = spyOn(ctrl, 'deregister').and.callThrough();
+
+        var nodeA = element[0].querySelector('[ng-message="a"]');
+        jqLite(nodeA).remove();
+        $rootScope.$digest(); // The next digest triggers the error
+
+        // Make sure removing the element triggers the deregistration in ngMessages
+        expect(trim(deregisterSpy.calls.mostRecent().args[0].nodeValue)).toBe('ngMessage: a');
+        expect(messageChildren(element).length).toBe(0);
+      });
+    });
+
+
+    it('should not crash, but show deeply nested messages correctly after a message ' +
+      'has been removed', function() {
+      inject(function($rootScope, $compile) {
+
+        element = $compile(
+          '<div ng-messages="col" ng-messages-multiple>' +
+            '<div class="another-wrapper">' +
+              '<div ng-message="a">A</div>' +
+              '<div class="wrapper">' +
+                '<div ng-message="b">B</div>' +
+                '<div ng-message="c">C</div>' +
+              '</div>' +
+              '<div ng-message="d">D</div>' +
+            '</div>' +
+          '</div>'
+        )($rootScope);
+
+        $rootScope.$apply(function() {
+          $rootScope.col = {
+            a: true,
+            b: true
+          };
+        });
+
+        expect(messageChildren(element).length).toBe(2);
+        expect(trim(element.text())).toEqual('AB');
+
+        var ctrl = element.controller('ngMessages');
+        var deregisterSpy = spyOn(ctrl, 'deregister').and.callThrough();
+
+        var nodeB = element[0].querySelector('[ng-message="b"]');
+        jqLite(nodeB).remove();
+        $rootScope.$digest(); // The next digest triggers the error
+
+        // Make sure removing the element triggers the deregistration in ngMessages
+        expect(trim(deregisterSpy.calls.mostRecent().args[0].nodeValue)).toBe('ngMessage: b');
+        expect(messageChildren(element).length).toBe(1);
+        expect(trim(element.text())).toEqual('A');
+      });
+    });
+  });
+
+
+  it('should clean-up the ngMessage scope when a message is removed',
+    inject(function($compile, $rootScope) {
+
+      var html =
+          '<div ng-messages="items">' +
+            '<div ng-message="a">{{forA}}</div>' +
+          '</div>';
+
+      element = $compile(html)($rootScope);
+      $rootScope.$apply(function() {
+        $rootScope.forA = 'A';
+        $rootScope.items = {a: true};
+      });
+
+      expect(element.text()).toBe('A');
+      var watchers = $rootScope.$countWatchers();
+
+      $rootScope.$apply('items.a = false');
+
+      expect(element.text()).toBe('');
+      // We don't know exactly how many watchers are on the scope, only that there should be
+      // one less now
+      expect($rootScope.$countWatchers()).toBe(watchers - 1);
+    })
+  );
+
+
   describe('when including templates', function() {
     they('should work with a dynamic collection model which is managed by ngRepeat',
       {'<div ng-messages-include="...">': '<div ng-messages="item">' +
@@ -427,7 +663,7 @@ describe('ngMessages', function() {
 
         var elements = element[0].querySelectorAll('[ng-repeat]');
 
-        // all three collections should have atleast one error showing up
+        // all three collections should have at least one error showing up
         expect(messageChildren(element).length).toBe(3);
         expect(messageChildren(elements[0]).length).toBe(1);
         expect(messageChildren(elements[1]).length).toBe(1);
@@ -507,7 +743,7 @@ describe('ngMessages', function() {
         });
 
         expect(messageChildren(element).length).toBe(1);
-        expect(trim(element.text())).toEqual("A");
+        expect(trim(element.text())).toEqual('A');
 
         $rootScope.$apply(function() {
           $rootScope.data = {
@@ -516,7 +752,7 @@ describe('ngMessages', function() {
         });
 
         expect(messageChildren(element).length).toBe(1);
-        expect(trim(element.text())).toEqual("C");
+        expect(trim(element.text())).toEqual('C');
       });
     });
 
@@ -554,13 +790,13 @@ describe('ngMessages', function() {
       $rootScope.$digest();
 
       expect(messageChildren(element).length).toBe(1);
-      expect(trim(element.text())).toEqual("Your value is that of failure");
+      expect(trim(element.text())).toEqual('Your value is that of failure');
 
       $httpBackend.flush();
       $rootScope.$digest();
 
       expect(messageChildren(element).length).toBe(1);
-      expect(trim(element.text())).toEqual("You did not enter a value");
+      expect(trim(element.text())).toEqual('You did not enter a value');
     }));
 
     it('should allow for overriding the remote template messages within the element depending on where the remote template is placed',
@@ -585,7 +821,7 @@ describe('ngMessages', function() {
       });
 
       expect(messageChildren(element).length).toBe(1);
-      expect(trim(element.text())).toEqual("AAA");
+      expect(trim(element.text())).toEqual('AAA');
 
       $rootScope.$apply(function() {
         $rootScope.data = {
@@ -595,7 +831,7 @@ describe('ngMessages', function() {
       });
 
       expect(messageChildren(element).length).toBe(1);
-      expect(trim(element.text())).toEqual("B");
+      expect(trim(element.text())).toEqual('B');
 
       $rootScope.$apply(function() {
         $rootScope.data = {
@@ -604,9 +840,77 @@ describe('ngMessages', function() {
       });
 
       expect(messageChildren(element).length).toBe(1);
-      expect(trim(element.text())).toEqual("C");
+      expect(trim(element.text())).toEqual('C');
     }));
 
+    it('should properly detect a previous message, even if it was registered later',
+      inject(function($compile, $rootScope, $templateCache) {
+        $templateCache.put('include.html', '<div ng-message="a">A</div>');
+        var html =
+            '<div ng-messages="items">' +
+              '<div ng-include="\'include.html\'"></div>' +
+              '<div ng-message="b">B</div>' +
+              '<div ng-message="c">C</div>' +
+            '</div>';
+
+        element = $compile(html)($rootScope);
+        $rootScope.$apply('items = {b: true, c: true}');
+
+        expect(element.text()).toBe('B');
+
+        var ctrl = element.controller('ngMessages');
+        var deregisterSpy = spyOn(ctrl, 'deregister').and.callThrough();
+
+        var nodeB = element[0].querySelector('[ng-message="b"]');
+        jqLite(nodeB).remove();
+
+        // Make sure removing the element triggers the deregistration in ngMessages
+        expect(trim(deregisterSpy.calls.mostRecent().args[0].nodeValue)).toBe('ngMessage: b');
+
+        $rootScope.$apply('items.a = true');
+
+        expect(element.text()).toBe('A');
+      })
+    );
+
+    it('should not throw if scope has been destroyed when template request is ready',
+      inject(function($rootScope, $httpBackend, $compile) {
+        $httpBackend.expectGET('messages.html').respond('<div ng-message="a">A</div>');
+        $rootScope.show = true;
+        var html =
+            '<div ng-if="show">' +
+              '<div ng-messages="items">' +
+                '<div ng-messages-include="messages.html"></div>' +
+              '</div>' +
+            '</div>';
+
+        element = $compile(html)($rootScope);
+        $rootScope.$digest();
+        $rootScope.show = false;
+        $rootScope.$digest();
+        expect(function() {
+          $httpBackend.flush();
+        }).not.toThrow();
+    }));
+
+    it('should not throw if the template is empty',
+      inject(function($compile, $rootScope, $templateCache) {
+        var html =
+            '<div ng-messages="items">' +
+              '<div ng-messages-include="messages1.html"></div>' +
+              '<div ng-messages-include="messages2.html"></div>' +
+            '</div>';
+
+        $templateCache.put('messages1.html', '');
+        $templateCache.put('messages2.html', '   ');
+        element = $compile(html)($rootScope);
+        $rootScope.$digest();
+
+        expect(element.text()).toBe('');
+        expect(element.children().length).toBe(0);
+        expect(element.contents().length).toBe(2);
+      })
+    );
   });
 
   describe('when multiple', function() {
@@ -630,7 +934,7 @@ describe('ngMessages', function() {
         });
 
         expect(messageChildren(element).length).toBe(2);
-        expect(s(element.text())).toContain("13");
+        expect(s(element.text())).toContain('13');
       });
     });
 
@@ -654,14 +958,14 @@ describe('ngMessages', function() {
       });
 
       expect(messageChildren(element).length).toBe(2);
-      expect(s(element.text())).toEqual("XZ");
+      expect(s(element.text())).toEqual('XZ');
 
       $rootScope.$apply(function() {
         $rootScope.data.y = {};
       });
 
       expect(messageChildren(element).length).toBe(3);
-      expect(s(element.text())).toEqual("XYZ");
+      expect(s(element.text())).toEqual('XYZ');
     }));
 
     it('should render and override all truthy messages from a remote template',
@@ -686,14 +990,14 @@ describe('ngMessages', function() {
       });
 
       expect(messageChildren(element).length).toBe(2);
-      expect(s(element.text())).toEqual("ZZZX");
+      expect(s(element.text())).toEqual('ZZZX');
 
       $rootScope.$apply(function() {
         $rootScope.data.y = {};
       });
 
       expect(messageChildren(element).length).toBe(3);
-      expect(s(element.text())).toEqual("YYYZZZX");
+      expect(s(element.text())).toEqual('YYYZZZX');
     }));
   });
 });
